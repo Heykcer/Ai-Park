@@ -6,7 +6,7 @@ import { Camera, RefreshCw, CheckCircle, X, ShieldCheck, Upload, AlertCircle, In
 /**
  * Stripped-down, ultra-resilient FaceCapture component
  */
-export default function FaceCapture({ onCapture, onClear, capturedImage }) {
+export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptureLandmarks }) {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
@@ -17,6 +17,12 @@ export default function FaceCapture({ onCapture, onClear, capturedImage }) {
     const [countdown, setCountdown] = useState(null);
     const [error, setError] = useState("");
     const [diagnostic, setDiagnostic] = useState("");
+
+    // Face mesh states
+    const overlayRef = useRef(null);
+    const requestRef = useRef(null);
+    const [landmarker, setLandmarker] = useState(null);
+    const [isModelLoading, setIsModelLoading] = useState(true);
 
     // Diagnostic check on load
     useEffect(() => {
@@ -29,6 +35,88 @@ export default function FaceCapture({ onCapture, onClear, capturedImage }) {
             }
         }
     }, []);
+
+    // Load FaceLandmarker Model
+    useEffect(() => {
+        let isMounted = true;
+        async function loadModel() {
+            try {
+                const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
+                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
+                const lm = await FaceLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                        delegate: "GPU"
+                    },
+                    outputFaceBlendshapes: false,
+                    runningMode: "VIDEO",
+                    numFaces: 1
+                });
+                if (isMounted) {
+                    setLandmarker(lm);
+                    setIsModelLoading(false);
+                    console.log("[FaceCapture] FaceLandmarker loaded");
+                }
+            } catch (e) {
+                console.error("[FaceCapture] Failed to load FaceLandmarker", e);
+                if (isMounted) {
+                    setIsModelLoading(false);
+                    setError("Facemesh model failed to load. Basic capture will be used.");
+                }
+            }
+        }
+        loadModel();
+        return () => { isMounted = false; };
+    }, []);
+
+    // Store the last detected landmarks for exporting on capture
+    const lastLandmarksRef = useRef(null);
+
+    // Render loop for FaceLandmarker
+    const renderLoop = useCallback(() => {
+        if (!videoRef.current || !overlayRef.current || !landmarker || !cameraActive) return;
+
+        const video = videoRef.current;
+        const canvas = overlayRef.current;
+        const ctx = canvas.getContext("2d");
+
+        if (video.readyState >= 2) {
+            // Match canvas size to video internal size
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const startTimeMs = performance.now();
+            if (video.currentTime > 0) {
+                const results = landmarker.detectForVideo(video, startTimeMs);
+                if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                    // Save latest landmarks for capture
+                    lastLandmarksRef.current = results.faceLandmarks[0];
+                    for (const landmarks of results.faceLandmarks) {
+                        ctx.fillStyle = "rgba(56, 189, 248, 0.8)"; // sky-blue
+                        for (const point of landmarks) {
+                            ctx.beginPath();
+                            ctx.arc(point.x * canvas.width, point.y * canvas.height, 1.2, 0, 2 * Math.PI);
+                            ctx.fill();
+                        }
+                    }
+                }
+            }
+        }
+        requestRef.current = requestAnimationFrame(renderLoop);
+    }, [landmarker, cameraActive]);
+
+    useEffect(() => {
+        if (cameraActive && landmarker) {
+            requestRef.current = requestAnimationFrame(renderLoop);
+        }
+        return () => {
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+        };
+    }, [cameraActive, landmarker, renderLoop]);
 
     const startCamera = useCallback(async () => {
         console.log("[FaceCapture] startCamera() called");
@@ -105,25 +193,31 @@ export default function FaceCapture({ onCapture, onClear, capturedImage }) {
 
     const takePhoto = () => {
         const video = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!video || !canvas) {
-            console.error("[FaceCapture] Capture failed: ref missing", { video: !!video, canvas: !!canvas });
+        const mainCanvas = canvasRef.current;
+        if (!video || !mainCanvas) {
+            console.error("[FaceCapture] Capture failed: ref missing");
             return;
         }
 
         const w = video.videoWidth || 640;
         const h = video.videoHeight || 480;
-        canvas.width = w;
-        canvas.height = h;
+        mainCanvas.width = w;
+        mainCanvas.height = h;
 
         console.log(`[FaceCapture] Drawing to canvas: ${w}x${h}`);
-        const ctx = canvas.getContext("2d");
+        const ctx = mainCanvas.getContext("2d");
         ctx.translate(w, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, w, h);
 
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+        const dataUrl = mainCanvas.toDataURL("image/jpeg", 0.9);
         onCapture(dataUrl);
+
+        // Pass landmark vector to parent for biometric storage
+        if (onCaptureLandmarks && lastLandmarksRef.current) {
+            onCaptureLandmarks(lastLandmarksRef.current);
+        }
+
         stopCamera();
     };
 
@@ -197,35 +291,46 @@ export default function FaceCapture({ onCapture, onClear, capturedImage }) {
                     </div>
                 ) : (
                     <div className="w-full h-full absolute inset-0 bg-black flex flex-col items-center">
+                        {/* Video Element */}
                         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: "scaleX(-1)" }} />
+
+                        {/* Facemesh Overlay Canvas */}
+                        <canvas ref={overlayRef} className="absolute inset-0 w-full h-full object-cover pointer-events-none" style={{ transform: "scaleX(-1)" }} />
 
                         {/* Overlays */}
                         <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40 flex items-center justify-center">
                             <div className="w-full h-full rounded-full border-2 border-white/30" />
                         </div>
 
+                        {/* Model Loading indicator overlay */}
+                        {isModelLoading && (
+                            <div className="absolute top-4 right-4 bg-black/60 text-white text-xs font-bold px-3 py-1 rounded-full border border-sky-400">
+                                ⏳ Initializing Facemesh AI...
+                            </div>
+                        )}
+
                         {countdown !== null && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
-                                <span className="text-white text-9xl font-black">{countdown}</span>
+                            <div className="absolute inset-0 flex items-center justify-center bg-sky-blue/20 pointer-events-none">
+                                <span className="text-white text-[12rem] font-black drop-shadow-2xl font-fun animate-bounce">{countdown}</span>
                             </div>
                         )}
 
                         {/* Controls */}
-                        <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 px-6">
-                            <button onClick={handleCapture} disabled={countdown !== null} className="flex-1 bg-red-500 hover:bg-red-400 disabled:bg-gray-600 text-white h-16 rounded-2xl font-black text-xl shadow-2xl transition-all">
+                        <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 px-6 z-10">
+                            <button onClick={handleCapture} disabled={countdown !== null} className="flex-1 bg-coral-orange hover:bg-orange-500 disabled:bg-gray-600 text-white h-16 rounded-2xl font-black text-lg uppercase tracking-widest shadow-2xl transition-all border border-orange-400">
                                 {countdown ? "HOLD STEADY..." : "CAPTURE NOW"}
                             </button>
-                            <button onClick={stopCamera} className="w-16 h-16 bg-white/10 hover:bg-white/20 text-white rounded-2xl flex items-center justify-center border border-white/10">
-                                <X size={24} />
+                            <button onClick={stopCamera} className="w-16 h-16 bg-white border border-white/20 hover:bg-gray-200 text-gray-900 rounded-2xl flex items-center justify-center shadow-lg transition-all">
+                                <X size={24} strokeWidth={3} />
                             </button>
                         </div>
                     </div>
                 )}
             </div>
 
-            <div className="mt-4 flex items-center gap-2 text-gray-400 text-[10px] leading-tight">
-                <Info size={12} />
-                <p>Ensure you are in a well-lit area. Your photo will be used only for ticket verification.</p>
+            <div className="mt-4 flex items-center gap-2 text-gray-400 text-[10px] leading-tight font-medium bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <Info size={14} className="text-sky-blue" />
+                <p>We use AI to map your face for secure, frictionless ticket entry! Your data stays on your device.</p>
             </div>
         </div>
     );

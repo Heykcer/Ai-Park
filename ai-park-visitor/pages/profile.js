@@ -1,9 +1,10 @@
 import Head from "next/head";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { User, Ticket, Bell, Users, LogOut, Plus, X, Edit2, CheckCircle } from "lucide-react";
+import { User, Ticket, Bell, Users, LogOut, Plus, X, Edit2, CheckCircle, QrCode, Download, ScanFace, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 import {
     apiGetMe,
     apiGetMyBookings,
@@ -39,6 +40,23 @@ export default function ProfilePage() {
     const [editForm, setEditForm] = useState({});
     const [saved, setSaved] = useState(false);
     const [apiError, setApiError] = useState("");
+    const [expandedBooking, setExpandedBooking] = useState(null);
+    const [bookingTab, setBookingTab] = useState({});
+    const qrRefs = useRef({});
+
+    const downloadQR = (bookingId, ref) => {
+        const svg = qrRefs.current[bookingId]?.querySelector("svg");
+        if (!svg) return;
+        const serializer = new XMLSerializer();
+        const svgStr = serializer.serializeToString(svg);
+        const blob = new Blob([svgStr], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `SunnySplash-${ref}.svg`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     useEffect(() => {
         const token = localStorage.getItem("sp_token");
@@ -247,7 +265,6 @@ export default function ProfilePage() {
                                     </motion.div>
                                 )}
 
-                                {/* BOOKINGS */}
                                 {activeTab === "bookings" && (
                                     <motion.div key="bookings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
                                         <div className="bg-white rounded-[1.75rem] soft-shadow p-8">
@@ -264,34 +281,137 @@ export default function ProfilePage() {
                                                 </div>
                                             ) : (
                                                 <div className="space-y-4">
-                                                    {bookings.map((b) => (
-                                                        <div key={b._id} className="border-2 border-dashed border-sky-100 rounded-2xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                                            <div>
-                                                                <p className="font-bold text-gray-800 font-poppins">📅 {new Date(b.visitDate).toLocaleDateString()}</p>
-                                                                <p className="text-gray-500 text-sm">
-                                                                    {b.visitors?.length || 0} visitor(s) · Ref: {b._id.toString().slice(-6).toUpperCase()}
-                                                                </p>
+                                                    {bookings.map((b) => {
+                                                        const ref = b._id.toString().slice(-6).toUpperCase();
+                                                        const visitDate = new Date(b.visitDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+                                                        const isExpanded = expandedBooking === b._id;
+                                                        const tab = bookingTab[b._id] || "qr";
+                                                        const facePhoto = b.visitors?.[0]?.photo || null;
+                                                        const qrValue = b.qrToken || JSON.stringify({ ref, date: visitDate, visitors: b.visitors?.length || 0, amount: b.totalPrice, park: "SunnySplash-GEC" });
 
+                                                        return (
+                                                            <div key={b._id} className="border-2 border-dashed border-sky-100 rounded-2xl overflow-hidden transition-all">
+                                                                {/* Booking Row */}
+                                                                <button
+                                                                    onClick={() => setExpandedBooking(isExpanded ? null : b._id)}
+                                                                    className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-5 text-left hover:bg-sky-50/50 transition-colors"
+                                                                >
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-10 h-10 bg-sky-blue/10 text-sky-blue rounded-xl flex items-center justify-center">
+                                                                            <QrCode size={20} />
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="font-bold text-gray-800">📅 {visitDate}</p>
+                                                                            <p className="text-gray-400 text-xs mt-0.5">{b.visitors?.length || 0} visitor(s) · Ref: <span className="font-mono font-bold text-sky-blue">{ref}</span></p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <span className="text-lg font-extrabold text-coral-orange">₹{b.totalPrice}</span>
+                                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${b.status === "booked" ? "bg-sky-blue/15 text-sky-blue"
+                                                                            : b.status === "cancelled" ? "bg-red-100 text-red-500"
+                                                                                : "bg-gray-100 text-gray-500"
+                                                                            }`}>
+                                                                            {b.status}
+                                                                        </span>
+                                                                        <ChevronDown size={18} className={`text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                                                    </div>
+                                                                </button>
+
+                                                                {/* Expanded Ticket */}
+                                                                <AnimatePresence>
+                                                                    {isExpanded && (
+                                                                        <motion.div
+                                                                            initial={{ height: 0, opacity: 0 }}
+                                                                            animate={{ height: "auto", opacity: 1 }}
+                                                                            exit={{ height: 0, opacity: 0 }}
+                                                                            className="overflow-hidden"
+                                                                        >
+                                                                            <div className="border-t-2 border-dashed border-sky-100 p-5 bg-sky-50/30">
+                                                                                {/* Tabs */}
+                                                                                <div className="flex gap-2 mb-4 bg-white rounded-xl p-1 shadow-inner max-w-xs">
+                                                                                    <button
+                                                                                        onClick={() => setBookingTab(t => ({ ...t, [b._id]: "qr" }))}
+                                                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-black uppercase transition-all ${tab === "qr" ? "bg-sky-blue text-white shadow" : "text-gray-400 hover:text-gray-700"
+                                                                                            }`}
+                                                                                    >
+                                                                                        <QrCode size={13} /> QR Code
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => setBookingTab(t => ({ ...t, [b._id]: "face" }))}
+                                                                                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-black uppercase transition-all ${tab === "face" ? "bg-coral-orange text-white shadow" : "text-gray-400 hover:text-gray-700"
+                                                                                            }`}
+                                                                                    >
+                                                                                        <ScanFace size={13} /> Face ID
+                                                                                    </button>
+                                                                                </div>
+
+                                                                                <AnimatePresence mode="wait">
+                                                                                    {tab === "qr" ? (
+                                                                                        <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col sm:flex-row items-center gap-6">
+                                                                                            <div
+                                                                                                ref={el => { if (el) qrRefs.current[b._id] = el; }}
+                                                                                                className="bg-white p-4 rounded-2xl shadow-inner border border-sky-100 flex-shrink-0"
+                                                                                            >
+                                                                                                <QRCodeSVG
+                                                                                                    value={qrValue}
+                                                                                                    size={150}
+                                                                                                    bgColor="#ffffff"
+                                                                                                    fgColor="#0369a1"
+                                                                                                    level="H"
+                                                                                                    includeMargin={false}
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div className="space-y-3">
+                                                                                                <p className="text-xs text-gray-400">🔐 This QR code is your backup entry pass. Save it offline!</p>
+                                                                                                <div className="text-sm space-y-1 font-medium text-gray-600">
+                                                                                                    <p>📅 Visit: <strong>{visitDate}</strong></p>
+                                                                                                    <p>👥 Visitors: <strong>{b.visitors?.length || 0}</strong></p>
+                                                                                                    <p>💰 Paid: <strong className="text-coral-orange">₹{b.totalPrice}</strong></p>
+                                                                                                </div>
+                                                                                                <div className="flex flex-wrap gap-2">
+                                                                                                    <button
+                                                                                                        onClick={() => downloadQR(b._id, ref)}
+                                                                                                        className="flex items-center gap-2 bg-sky-blue hover:bg-aqua text-white px-4 py-2 rounded-full text-xs font-bold transition-all shadow"
+                                                                                                    >
+                                                                                                        <Download size={14} /> Save QR
+                                                                                                    </button>
+                                                                                                    {b.status === "booked" && (
+                                                                                                        <button
+                                                                                                            onClick={() => handleCancelBooking(b._id)}
+                                                                                                            className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 px-4 py-2 rounded-full text-xs font-bold transition-all"
+                                                                                                        >
+                                                                                                            <X size={13} /> Cancel Booking
+                                                                                                        </button>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </motion.div>
+                                                                                    ) : (
+                                                                                        <motion.div key="face" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-6">
+                                                                                            {facePhoto ? (
+                                                                                                <img src={facePhoto} alt="Visitor Face" className="w-28 h-28 rounded-full object-cover border-4 border-coral-orange shadow-lg flex-shrink-0" />
+                                                                                            ) : (
+                                                                                                <div className="w-28 h-28 rounded-full bg-gray-100 border-4 border-dashed border-gray-300 flex items-center justify-center text-gray-300 flex-shrink-0">
+                                                                                                    <ScanFace size={36} />
+                                                                                                </div>
+                                                                                            )}
+                                                                                            <div className="text-sm text-gray-500 space-y-1">
+                                                                                                <p className="font-bold text-gray-700">Primary Entry: Face Scan</p>
+                                                                                                {facePhoto
+                                                                                                    ? <p className="text-fresh-green font-medium">✅ Biometric data registered</p>
+                                                                                                    : <p className="text-amber-500">⚠️ No face captured — use QR code</p>
+                                                                                                }
+                                                                                            </div>
+                                                                                        </motion.div>
+                                                                                    )}
+                                                                                </AnimatePresence>
+                                                                            </div>
+                                                                        </motion.div>
+                                                                    )}
+                                                                </AnimatePresence>
                                                             </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="text-xl font-extrabold text-coral-orange">${b.totalPrice}</span>
-                                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${b.status === "booked" ? "bg-sky-blue/20 text-sky-blue"
-                                                                    : b.status === "cancelled" ? "bg-red-100 text-red-500"
-                                                                        : "bg-gray-100 text-gray-500"
-                                                                    }`}>
-                                                                    {b.status}
-                                                                </span>
-                                                                {b.status === "booked" && (
-                                                                    <button
-                                                                        onClick={() => handleCancelBooking(b._id)}
-                                                                        className="text-xs text-gray-400 hover:text-coral-orange font-medium transition-colors"
-                                                                    >
-                                                                        Cancel
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>

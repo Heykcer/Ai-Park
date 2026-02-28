@@ -80,7 +80,7 @@ export default function Footer() {
                                 </div>
                                 <div>
                                     <h4 className="text-white font-black text-sm mb-1 uppercase tracking-widest">Main Gate</h4>
-                                    <p className="text-white/40 text-sm font-medium">XYZ , Bhubaneswar-752054</p>
+                                    <p className="text-white/40 text-sm font-medium">Gandhi Engineering College , Bhubaneswar-752054</p>
                                 </div>
                             </div>
                             <div className="flex items-start gap-5">

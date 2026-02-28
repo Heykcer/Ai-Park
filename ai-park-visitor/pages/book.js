@@ -1,16 +1,17 @@
 import Head from "next/head";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { Ticket, Users, Star, QrCode, CheckCircle, LogIn } from "lucide-react";
+import { Ticket, Users, Star, QrCode, CheckCircle, LogIn, Download, ScanFace } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 import FaceCapture from "../components/FaceCapture";
 import { apiUploadFace, apiCreateBooking } from "../lib/api";
 
 const ticketTypes = [
-    { id: "adult", label: "Adult", emoji: "🧑", price: 49 },
-    { id: "child", label: "Child (Under 12)", emoji: "👦", price: 29 },
-    { id: "senior", label: "Senior (60+)", emoji: "👴", price: 35 },
+    { id: "adult", label: "Adult", emoji: "🧑", price: 1200 },
+    { id: "child", label: "Child (Under 12)", emoji: "👦", price: 800 },
+    { id: "senior", label: "Senior (60+)", emoji: "👴", price: 1000 },
 ];
 
 const membershipOptions = [
@@ -48,10 +49,14 @@ export default function BookTickets() {
     const [quantities, setQuantities] = useState({ adult: 1, child: 0, senior: 0 });
     const [membership, setMembership] = useState("none");
     const [confirmed, setConfirmed] = useState(false);
-    const [faceImage, setFaceImage] = useState(null); // base64 face photo
-    const [bookingRef, setBookingRef] = useState("");  // from backend
+    const [faceImage, setFaceImage] = useState(null);
+    const [faceLandmarks, setFaceLandmarks] = useState(null);
+    const [bookingRef, setBookingRef] = useState("");
+    const [qrToken, setQrToken] = useState("");       // backend-signed QR token
     const [submitting, setSubmitting] = useState(false);
     const [bookError, setBookError] = useState("");
+    const [ticketTab, setTicketTab] = useState("qr");
+    const qrRef = useRef(null);
 
     useEffect(() => {
         const token = localStorage.getItem("sp_token");
@@ -102,10 +107,10 @@ export default function BookTickets() {
         setBookError("");
 
         try {
-            // 1. Upload face photo to Cloudinary via FastAPI (Note: locally it saves to MongoDB)
+            // 1. Upload face photo (locally returns image data directly)
             const { profileImage: savedImage } = await apiUploadFace(faceImage);
 
-            // 2. Create booking in MongoDB
+            // 2. Create booking in MongoDB with photo + biometric landmark data
             const res = await apiCreateBooking({
                 visit_date: date,
                 adult_count: quantities.adult,
@@ -114,10 +119,13 @@ export default function BookTickets() {
                 membership,
                 total_amount: total,
                 profileImage: savedImage,
+                faceLandmarks: faceLandmarks,
             });
 
             setBookingRef(res.ticket._id.toString().slice(-6).toUpperCase());
+            setQrToken(res.ticket.qrToken || "");    // store backend-signed token
             setConfirmed(true);
+            setTicketTab("qr");
         } catch (err) {
             setBookError(err.message || "Booking failed. Please try again.");
         } finally {
@@ -159,23 +167,98 @@ export default function BookTickets() {
                                     <CheckCircle size={48} className="text-fresh-green" />
                                 </div>
                                 <h2 className="text-3xl font-extrabold font-fun text-fresh-green mb-2">Booking Confirmed! 🎉</h2>
-                                <p className="text-gray-500 mb-8 text-lg">Your tickets for <strong>{date}</strong> are ready. Show the QR code at the gate!</p>
+                                <p className="text-gray-500 mb-8 text-lg">Your tickets for <strong>{date}</strong> are ready. Use Face Scan <strong>or</strong> QR Code at the gate!</p>
 
-                                {/* Mock QR Ticket */}
-                                <div className="border-4 border-dashed border-sky-blue rounded-[2rem] p-6 max-w-xs w-full bg-sky-50 relative">
-                                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-sky-blue text-white px-4 py-1 rounded-full text-sm font-bold">
+                                {/* Premium Ticket Card */}
+                                <div className="border-4 border-dashed border-sky-blue rounded-[2rem] p-6 max-w-sm w-full bg-sky-50 relative">
+                                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-sky-blue text-white px-4 py-1 rounded-full text-sm font-bold whitespace-nowrap">
                                         🌊 SunnySplash Ticket
                                     </div>
-                                    <div className="bg-white rounded-xl p-4 flex items-center justify-center mb-4 shadow-inner">
-                                        {faceImage ? (
-                                            <img src={faceImage} alt="Face" className="w-28 h-28 rounded-full object-cover border-4 border-sky-blue" />
-                                        ) : (
-                                            <QrCode size={120} className="text-gray-800" />
-                                        )}
+
+                                    {/* Entry Method Tabs */}
+                                    <div className="flex gap-2 mb-4 bg-white rounded-xl p-1 shadow-inner">
+                                        <button
+                                            onClick={() => setTicketTab("qr")}
+                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-black uppercase transition-all ${ticketTab === "qr" ? "bg-sky-blue text-white shadow-md" : "text-gray-400 hover:text-gray-700"
+                                                }`}
+                                        >
+                                            <QrCode size={14} /> QR Backup
+                                        </button>
+                                        <button
+                                            onClick={() => setTicketTab("face")}
+                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-black uppercase transition-all ${ticketTab === "face" ? "bg-coral-orange text-white shadow-md" : "text-gray-400 hover:text-gray-700"
+                                                }`}
+                                        >
+                                            <ScanFace size={14} /> Face ID
+                                        </button>
                                     </div>
-                                    <p className="text-sky-blue font-bold text-lg font-fun">{bookingRef || "SS-PENDING"}</p>
-                                    <p className="text-gray-500 text-sm">{totalVisitors} visitor{totalVisitors !== 1 ? "s" : ""} · {date}</p>
-                                    <p className="text-coral-orange font-bold text-xl mt-2">${total} paid</p>
+
+                                    {/* Tab Content */}
+                                    <AnimatePresence mode="wait">
+                                        {ticketTab === "qr" ? (
+                                            <motion.div
+                                                key="qr"
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 10 }}
+                                                className="flex flex-col items-center gap-3"
+                                            >
+                                                <div ref={qrRef} className="bg-white p-4 rounded-2xl shadow-inner border border-sky-100">
+                                                    <QRCodeSVG
+                                                        value={qrToken || JSON.stringify({ ref: bookingRef || "PENDING", date, visitors: totalVisitors, amount: total, park: "SunnySplash-GEC" })}
+                                                        size={180}
+                                                        bgColor="#ffffff"
+                                                        fgColor="#0369a1"
+                                                        level="H"
+                                                        includeMargin={false}
+                                                    />
+                                                </div>
+                                                <p className="text-[10px] text-gray-400 font-medium">Show this QR code at the gate as backup</p>
+                                                <button
+                                                    onClick={() => {
+                                                        const svg = qrRef.current?.querySelector("svg");
+                                                        if (!svg) return;
+                                                        const serializer = new XMLSerializer();
+                                                        const svgStr = serializer.serializeToString(svg);
+                                                        const blob = new Blob([svgStr], { type: "image/svg+xml" });
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement("a");
+                                                        a.href = url;
+                                                        a.download = `SunnySplash-${bookingRef || "ticket"}.svg`;
+                                                        a.click();
+                                                        URL.revokeObjectURL(url);
+                                                    }}
+                                                    className="flex items-center gap-2 bg-sky-blue hover:bg-aqua text-white px-5 py-2 rounded-full font-bold text-sm transition-all shadow-md"
+                                                >
+                                                    <Download size={16} /> Save QR Code
+                                                </button>
+                                            </motion.div>
+                                        ) : (
+                                            <motion.div
+                                                key="face"
+                                                initial={{ opacity: 0, x: 10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -10 }}
+                                                className="flex flex-col items-center gap-3"
+                                            >
+                                                {faceImage ? (
+                                                    <img src={faceImage} alt="Face" className="w-36 h-36 rounded-full object-cover border-4 border-coral-orange shadow-lg" />
+                                                ) : (
+                                                    <div className="w-36 h-36 rounded-full bg-gray-100 border-4 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
+                                                        <ScanFace size={48} />
+                                                    </div>
+                                                )}
+                                                <p className="text-[10px] text-gray-400 font-medium">Primary: Face will be scanned at entry</p>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+
+                                    {/* Ticket Info */}
+                                    <div className="mt-4 pt-4 border-t border-sky-100 text-center space-y-1">
+                                        <p className="text-sky-blue font-bold text-lg font-fun">{bookingRef || "SS-PENDING"}</p>
+                                        <p className="text-gray-500 text-sm">{totalVisitors} visitor{totalVisitors !== 1 ? "s" : ""} · {date}</p>
+                                        <p className="text-coral-orange font-bold text-xl">₹{total} paid</p>
+                                    </div>
                                 </div>
 
                                 <button
@@ -221,7 +304,7 @@ export default function BookTickets() {
                                                 <div key={t.id} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
                                                     <div>
                                                         <p className="font-bold text-gray-800">{t.emoji} {t.label}</p>
-                                                        <p className="text-coral-orange font-bold">${t.price}</p>
+                                                        <p className="text-coral-orange font-bold">₹{t.price}</p>
                                                     </div>
                                                     <div className="flex items-center gap-3">
                                                         <button
@@ -281,7 +364,8 @@ export default function BookTickets() {
                                     <FaceCapture
                                         capturedImage={faceImage}
                                         onCapture={(img) => setFaceImage(img)}
-                                        onClear={() => setFaceImage(null)}
+                                        onCaptureLandmarks={(lm) => setFaceLandmarks(lm)}
+                                        onClear={() => { setFaceImage(null); setFaceLandmarks(null); }}
                                     />
                                 </div>
 
@@ -297,7 +381,7 @@ export default function BookTickets() {
                                                 quantities[t.id] > 0 ? (
                                                     <div key={t.id} className="flex justify-between text-gray-600">
                                                         <span>{t.emoji} {t.label} × {quantities[t.id]}</span>
-                                                        <span className="font-semibold">${t.price * quantities[t.id]}</span>
+                                                        <span className="font-semibold">₹{t.price * quantities[t.id]}</span>
                                                     </div>
                                                 ) : null
                                             )}
@@ -316,7 +400,7 @@ export default function BookTickets() {
                                         <div className="border-t-2 border-dashed border-gray-100 pt-4 mb-6">
                                             <div className="flex justify-between text-2xl font-extrabold text-gray-900 font-fun">
                                                 <span>Total</span>
-                                                <span className="text-coral-orange">${total}</span>
+                                                <span className="text-coral-orange">₹{total}</span>
                                             </div>
                                             {date && <p className="text-gray-400 text-sm mt-1">📅 {date}</p>}
                                         </div>

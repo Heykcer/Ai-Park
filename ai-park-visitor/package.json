@@ -15,11 +15,14 @@
     "cookie-js": "^0.0.1",
     "framer-motion": "^12.34.3",
     "jsonwebtoken": "^9.0.3",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.575.0",
     "mongoose": "^9.2.3",
     "next": "16.1.6",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
