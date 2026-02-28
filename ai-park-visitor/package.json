@@ -1,0 +1,29 @@
+{
+  "name": "ai-park-visitor",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "bun start --watch",
+    "lint": "biome check",
+    "format": "biome format --write"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.32",
+    "bcryptjs": "^3.0.3",
+    "cookie-js": "^0.0.1",
+    "framer-motion": "^12.34.3",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.575.0",
+    "mongoose": "^9.2.3",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.2.0",
+    "@tailwindcss/postcss": "^4",
+    "tailwindcss": "^4"
+  }
+}
