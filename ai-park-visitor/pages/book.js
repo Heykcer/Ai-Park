@@ -2,6 +2,7 @@ import Head from "next/head";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import Script from "next/script";
 import { Ticket, Users, Star, QrCode, CheckCircle, LogIn, Download, ScanFace } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
@@ -9,9 +10,9 @@ import FaceCapture from "../components/FaceCapture";
 import { apiUploadFace, apiCreateBooking } from "../lib/api";
 
 const ticketTypes = [
-    { id: "adult", label: "Adult", emoji: "🧑", price: 1200 },
-    { id: "child", label: "Child (Under 12)", emoji: "👦", price: 800 },
-    { id: "senior", label: "Senior (60+)", emoji: "👴", price: 1000 },
+    { id: "adult", label: "Adult", emoji: "🧑", price: 1 },
+    { id: "child", label: "Child (Under 12)", emoji: "👦", price: 1 },
+    { id: "senior", label: "Senior (60+)", emoji: "👴", price: 1 },
 ];
 
 const membershipOptions = [
@@ -137,20 +138,68 @@ export default function BookTickets() {
         setBookError("");
 
         try {
-            const res = await apiCreateBooking({
-                visitDate: date,
-                totalPrice: total,
-                visitors: finalVisitors
+            // 1. Create Razorpay Order
+            const orderRes = await fetch("/api/razorpay/order", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ amount: total }),
             });
 
-            setBookingRef(res.ticket._id.toString().slice(-6).toUpperCase());
-            setQrToken(res.ticket.qrToken || "");
-            setStep("confirmed");
+            if (!orderRes.ok) {
+                const err = await orderRes.json();
+                throw new Error(err.message || "Failed to initialize payment");
+            }
+
+            const order = await orderRes.json();
+
+            // 2. Open Razorpay Checkout
+            const options = {
+                key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+                amount: order.amount,
+                currency: order.currency,
+                name: "SunnySplash Water Park",
+                description: "Ticket Booking",
+                order_id: order.id,
+                handler: async function (response) {
+                    try {
+                        setSubmitting(true);
+                        // 3. Confirm Booking with Payment Details
+                        const res = await apiCreateBooking({
+                            visitDate: date,
+                            totalPrice: total,
+                            visitors: finalVisitors,
+                            razorpayOrderId: response.razorpay_order_id,
+                            razorpayPaymentId: response.razorpay_payment_id,
+                            razorpaySignature: response.razorpay_signature
+                        });
+
+                        setBookingRef(res.ticket._id.toString().slice(-6).toUpperCase());
+                        setQrToken(res.ticket.qrToken || "");
+                        setStep("confirmed");
+                    } catch (err) {
+                        setBookError(err.message || "Booking confirmation failed.");
+                    } finally {
+                        setSubmitting(false);
+                    }
+                },
+                prefill: {
+                    name: user?.name || "",
+                    email: user?.email || "",
+                },
+                theme: {
+                    color: "#0ea5e9", // sky-blue
+                },
+                modal: {
+                    ondismiss: function () {
+                        setSubmitting(false);
+                    }
+                }
+            };
+
+            const rzp = new window.Razorpay(options);
+            rzp.open();
         } catch (err) {
             setBookError(err.message || "Booking failed. Please try again.");
-            // Allow user to try again from the last step or restart? 
-            // For now, keep them on the last visitor screen.
-        } finally {
             setSubmitting(false);
         }
     };
@@ -536,6 +585,9 @@ export default function BookTickets() {
                     </AnimatePresence>
                 </div>
             </section>
+
+            {/* Razorpay Checkout Script */}
+            <Script src="https://checkout.razorpay.com/v1/checkout.js" />
         </>
     );
 }

@@ -88,7 +88,7 @@ export async function apiGetMe() {
 // ── Bookings ──────────────────────────────────────────────────────────────────
 
 export async function apiCreateBooking(bookingData) {
-    const { visitDate, totalPrice, visitors } = bookingData;
+    const { visitDate, totalPrice, visitors, razorpayOrderId, razorpayPaymentId, razorpaySignature } = bookingData;
 
     // Ensure each visitor with face landmarks has a flattened landmarkVector
     const processedVisitors = visitors.map(v => {
@@ -103,7 +103,10 @@ export async function apiCreateBooking(bookingData) {
     const payload = {
         visitDate,
         totalPrice,
-        visitors: processedVisitors
+        visitors: processedVisitors,
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature
     };
 
     return request("/tickets/book", {

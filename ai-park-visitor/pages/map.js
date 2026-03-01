@@ -3,11 +3,8 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 
-// Dynamic import for Leaflet components to avoid SSR issues with 'window'
-const MapContainer = dynamic(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then((mod) => mod.Marker), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then((mod) => mod.Popup), { ssr: false });
+// Dynamic import for the entire Map component to avoid SSR issues with Leaflet
+const ParkMapContent = dynamic(() => import("../components/ParkMapContent"), { ssr: false });
 
 const GEC_CENTER = [20.2367, 85.7250]; // Slightly adjusted center for better view
 
@@ -39,6 +36,9 @@ export default function ParkMap() {
     const [selected, setSelected] = useState(null);
     const [mounted, setMounted] = useState(false);
     const [L, setL] = useState(null);
+    const [userPosition, setUserPosition] = useState(null);
+    const [accuracy, setAccuracy] = useState(0);
+    const [isTracking, setIsTracking] = useState(false);
 
     useEffect(() => {
         setMounted(true);
@@ -57,6 +57,54 @@ export default function ParkMap() {
             iconSize: [45, 45],
             iconAnchor: [22, 22],
         });
+    };
+
+    const userIcon = () => {
+        if (!L) return null;
+        return L.divIcon({
+            className: "user-location-icon",
+            html: `
+                <div class="relative flex items-center justify-center">
+                    <div class="absolute w-6 h-6 bg-sky-blue/30 rounded-full animate-ping"></div>
+                    <div class="relative w-4 h-4 bg-sky-blue border-2 border-white rounded-full shadow-lg"></div>
+                </div>
+            `,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+        });
+    };
+
+    const handleFindMe = () => {
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser");
+            return;
+        }
+
+        setIsTracking(true);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const { latitude, longitude, accuracy } = pos.coords;
+                setUserPosition([latitude, longitude]);
+                setAccuracy(accuracy);
+            },
+            (err) => {
+                console.error("Geolocation error:", err);
+                alert("Please enable location access to see your position on the map.");
+                setIsTracking(false);
+            },
+            { enableHighAccuracy: true }
+        );
+
+        // Start watching position
+        navigator.geolocation.watchPosition(
+            (pos) => {
+                const { latitude, longitude, accuracy } = pos.coords;
+                setUserPosition([latitude, longitude]);
+                setAccuracy(accuracy);
+            },
+            null,
+            { enableHighAccuracy: true }
+        );
     };
 
     if (!mounted) return null;
@@ -101,38 +149,32 @@ export default function ParkMap() {
                         {/* Map Container */}
                         <div className="flex-1 min-h-[500px] lg:h-[600px] relative rounded-[2rem] overflow-hidden soft-shadow border-8 border-white">
                             {mounted && L && (
-                                <MapContainer
+                                <ParkMapContent
                                     center={GEC_CENTER}
-                                    zoom={17}
-                                    style={{ height: "100%", width: "100%" }}
-                                    className="z-10"
-                                >
-                                    <TileLayer
-                                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                                    />
-                                    {zones.map((zone) => (
-                                        <Marker
-                                            key={zone.id}
-                                            position={[zone.lat, zone.lng]}
-                                            icon={customIcon(zone.emoji)}
-                                            eventHandlers={{
-                                                click: () => setSelected(zone),
-                                            }}
-                                        >
-                                            <Popup className="custom-popup">
-                                                <div className="font-fun text-center py-1">
-                                                    <p className="font-black text-gray-800 text-lg uppercase leading-none">{zone.name}</p>
-                                                    <p className="text-xs text-sky-blue font-bold tracking-widest">{zone.actual}</p>
-                                                </div>
-                                            </Popup>
-                                        </Marker>
-                                    ))}
-                                </MapContainer>
+                                    zones={zones}
+                                    customIcon={customIcon}
+                                    userIcon={userIcon}
+                                    userPosition={userPosition}
+                                    accuracy={accuracy}
+                                    setSelected={setSelected}
+                                    crowdConfig={crowdConfig}
+                                    L={L}
+                                />
                             )}
 
                             {/* Stylized Overlay Filter */}
                             <div className="absolute inset-0 pointer-events-none z-20 border-[20px] border-white/40 mix-blend-overlay"></div>
+
+                            {/* Find My Location Button */}
+                            <button
+                                onClick={handleFindMe}
+                                className="absolute bottom-6 right-6 z-30 bg-white p-4 rounded-2xl shadow-xl hover:scale-105 transition-all text-sky-blue border-2 border-sky-50 flex items-center justify-center"
+                                title="Find My Location"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" className={isTracking ? "animate-pulse" : ""}>
+                                    <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
+                                </svg>
+                            </button>
                         </div>
 
                         {/* Info Panel */}

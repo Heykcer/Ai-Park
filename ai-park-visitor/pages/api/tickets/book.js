@@ -19,10 +19,20 @@ export default async function handler(req, res) {
 
     try {
         await dbConnect();
-        const { visitors, visitDate, totalPrice } = req.body;
+        const { visitors, visitDate, totalPrice, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
 
         if (!visitors || !Array.isArray(visitors) || visitors.length === 0) {
             return res.status(400).json({ message: 'At least one visitor is required' });
+        }
+
+        // --- Verify Razorpay Signature ---
+        const body = razorpayOrderId + "|" + razorpayPaymentId;
+        const expectedSignature = createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+            .update(body.toString())
+            .digest('hex');
+
+        if (expectedSignature !== razorpaySignature) {
+            return res.status(400).json({ message: 'Invalid payment signature' });
         }
 
         // Encode biometric data: hash landmark vector with SHA-256
@@ -40,6 +50,9 @@ export default async function handler(req, res) {
             visitors: processedVisitors,
             visitDate,
             totalPrice,
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature,
         });
 
         // --- Generate signed QR token for admin verification ---

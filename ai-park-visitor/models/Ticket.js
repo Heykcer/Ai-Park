@@ -34,6 +34,9 @@ const TicketSchema = new mongoose.Schema({
     },
     qrToken: { type: String },     // HMAC-signed token embedded in QR code
     qrPayload: { type: Object },   // Plain payload for admin display
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String },
 });
 
 export default mongoose.models.Ticket || mongoose.model('Ticket', TicketSchema);
