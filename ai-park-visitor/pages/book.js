@@ -48,11 +48,13 @@ export default function BookTickets() {
     const [date, setDate] = useState("");
     const [quantities, setQuantities] = useState({ adult: 1, child: 0, senior: 0 });
     const [membership, setMembership] = useState("none");
-    const [confirmed, setConfirmed] = useState(false);
-    const [faceImage, setFaceImage] = useState(null);
-    const [faceLandmarks, setFaceLandmarks] = useState(null);
+    const [step, setStep] = useState("selection"); // selection, details, confirmed
+    const [currentVisitorIdx, setCurrentVisitorIdx] = useState(0);
+    const [visitorsData, setVisitorsData] = useState([]);
+    const [tempVisitor, setTempVisitor] = useState({ name: "", age: "", photo: null, faceLandmarks: null });
+
     const [bookingRef, setBookingRef] = useState("");
-    const [qrToken, setQrToken] = useState("");       // backend-signed QR token
+    const [qrToken, setQrToken] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [bookError, setBookError] = useState("");
     const [ticketTab, setTicketTab] = useState("qr");
@@ -100,34 +102,54 @@ export default function BookTickets() {
     const total = Math.round(subtotal * (1 - discount));
     const totalVisitors = Object.values(quantities).reduce((a, b) => a + b, 0);
 
-    const handleBook = async (e) => {
+    const visitorTypesList = [
+        ...Array(quantities.adult).fill("adult"),
+        ...Array(quantities.child).fill("child"),
+        ...Array(quantities.senior).fill("senior")
+    ];
+
+    const startDetailsStep = (e) => {
         e.preventDefault();
-        if (!date || totalVisitors === 0 || !faceImage) return;
+        if (!date || totalVisitors === 0) return;
+        setVisitorsData([]);
+        setCurrentVisitorIdx(0);
+        setTempVisitor({ name: "", age: "", photo: null, faceLandmarks: null });
+        setStep("details");
+    };
+
+    const handleNextVisitor = (e) => {
+        e.preventDefault();
+        if (!tempVisitor.name || !tempVisitor.photo) return;
+
+        const updatedVisitors = [...visitorsData, { ...tempVisitor, type: visitorTypesList[currentVisitorIdx] }];
+        setVisitorsData(updatedVisitors);
+
+        if (currentVisitorIdx < totalVisitors - 1) {
+            setCurrentVisitorIdx(currentVisitorIdx + 1);
+            setTempVisitor({ name: "", age: "", photo: null, faceLandmarks: null });
+        } else {
+            submitBooking(updatedVisitors);
+        }
+    };
+
+    const submitBooking = async (finalVisitors) => {
         setSubmitting(true);
         setBookError("");
 
         try {
-            // 1. Upload face photo (locally returns image data directly)
-            const { profileImage: savedImage } = await apiUploadFace(faceImage);
-
-            // 2. Create booking in MongoDB with photo + biometric landmark data
             const res = await apiCreateBooking({
-                visit_date: date,
-                adult_count: quantities.adult,
-                child_count: quantities.child,
-                senior_count: quantities.senior,
-                membership,
-                total_amount: total,
-                profileImage: savedImage,
-                faceLandmarks: faceLandmarks,
+                visitDate: date,
+                totalPrice: total,
+                visitors: finalVisitors
             });
 
             setBookingRef(res.ticket._id.toString().slice(-6).toUpperCase());
-            setQrToken(res.ticket.qrToken || "");    // store backend-signed token
-            setConfirmed(true);
-            setTicketTab("qr");
+            setQrToken(res.ticket.qrToken || "");
+            setStep("confirmed");
         } catch (err) {
             setBookError(err.message || "Booking failed. Please try again.");
+            // Allow user to try again from the last step or restart? 
+            // For now, keep them on the last visitor screen.
         } finally {
             setSubmitting(false);
         }
@@ -156,7 +178,7 @@ export default function BookTickets() {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
 
                     <AnimatePresence mode="wait">
-                        {confirmed ? (
+                        {step === "confirmed" ? (
                             <motion.div
                                 key="confirmed"
                                 initial={{ opacity: 0, scale: 0.85 }}
@@ -215,6 +237,7 @@ export default function BookTickets() {
                                                 </div>
                                                 <p className="text-[10px] text-gray-400 font-medium">Show this QR code at the gate as backup</p>
                                                 <button
+                                                    type="button"
                                                     onClick={() => {
                                                         const svg = qrRef.current?.querySelector("svg");
                                                         if (!svg) return;
@@ -241,8 +264,8 @@ export default function BookTickets() {
                                                 exit={{ opacity: 0, x: -10 }}
                                                 className="flex flex-col items-center gap-3"
                                             >
-                                                {faceImage ? (
-                                                    <img src={faceImage} alt="Face" className="w-36 h-36 rounded-full object-cover border-4 border-coral-orange shadow-lg" />
+                                                {visitorsData[0]?.photo ? (
+                                                    <img src={visitorsData[0]?.photo} alt="Face" className="w-36 h-36 rounded-full object-cover border-4 border-coral-orange shadow-lg" />
                                                 ) : (
                                                     <div className="w-36 h-36 rounded-full bg-gray-100 border-4 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
                                                         <ScanFace size={48} />
@@ -262,18 +285,18 @@ export default function BookTickets() {
                                 </div>
 
                                 <button
-                                    onClick={() => setConfirmed(false)}
+                                    onClick={() => setStep("selection")}
                                     className="mt-8 bg-sky-blue hover:bg-aqua text-white px-8 py-3 rounded-full font-bold transition-colors"
                                 >
                                     Book Another Visit
                                 </button>
                             </motion.div>
-                        ) : (
+                        ) : step === "selection" ? (
                             <motion.form
                                 key="form"
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                onSubmit={handleBook}
+                                onSubmit={startDetailsStep}
                                 className="grid grid-cols-1 lg:grid-cols-5 gap-8"
                             >
                                 {/* Left: Form */}
@@ -360,13 +383,7 @@ export default function BookTickets() {
                                         </div>
                                     </div>
 
-                                    {/* Face Recognition */}
-                                    <FaceCapture
-                                        capturedImage={faceImage}
-                                        onCapture={(img) => setFaceImage(img)}
-                                        onCaptureLandmarks={(lm) => setFaceLandmarks(lm)}
-                                        onClear={() => { setFaceImage(null); setFaceLandmarks(null); }}
-                                    />
+                                    {/* Face Recognition (Removed from here, moved to step 2) */}
                                 </div>
 
                                 {/* Right: Summary */}
@@ -407,11 +424,11 @@ export default function BookTickets() {
 
                                         <button
                                             type="submit"
-                                            disabled={!date || totalVisitors === 0 || !faceImage || submitting}
+                                            disabled={!date || totalVisitors === 0 || submitting}
                                             className="w-full bg-coral-orange hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold text-lg transition-all transform hover:-translate-y-0.5 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                                         >
                                             <Ticket size={20} />
-                                            {submitting ? "⏳ Processing..." : "Pay & Get Tickets"}
+                                            {submitting ? "⏳ Processing..." : "Provide Visitor Details →"}
                                         </button>
 
                                         {bookError && (
@@ -419,11 +436,100 @@ export default function BookTickets() {
                                                 ⚠️ {bookError}
                                             </div>
                                         )}
-                                        {!faceImage && (
-                                            <p className="text-center text-amber-500 text-xs mt-2 font-medium">📸 Please capture your face photo to continue</p>
-                                        )}
                                         <p className="text-center text-gray-400 text-xs mt-2">🔒 Secure checkout · Instant QR ticket</p>
                                     </div>
+                                </div>
+                            </motion.form>
+                        ) : (
+                            /* Step 2: Visitor Details */
+                            <motion.form
+                                key="details"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                onSubmit={handleNextVisitor}
+                                className="max-w-3xl mx-auto w-full"
+                            >
+                                <div className="bg-white rounded-[2rem] soft-shadow p-8 sm:p-10 border-t-8 border-sky-blue">
+                                    <div className="flex justify-between items-center mb-8">
+                                        <div>
+                                            <h2 className="text-3xl font-extrabold font-fun text-gray-800">
+                                                Visitor {currentVisitorIdx + 1} of {totalVisitors}
+                                            </h2>
+                                            <p className="text-gray-500 font-medium">Type: <span className="text-sky-blue uppercase font-bold">{visitorTypesList[currentVisitorIdx]}</span></p>
+                                        </div>
+                                        <div className="bg-sky-50 px-4 py-2 rounded-2xl border border-sky-100">
+                                            <p className="text-sky-blue font-bold text-sm">Step 2 of 2</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-600 mb-2 uppercase tracking-wider">Full Name</label>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    placeholder="Enter visitor name"
+                                                    value={tempVisitor.name}
+                                                    onChange={(e) => setTempVisitor({ ...tempVisitor, name: e.target.value })}
+                                                    className="w-full border-2 border-gray-100 focus:border-sky-blue rounded-2xl px-5 py-4 text-gray-700 font-medium outline-none transition-all text-lg"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-600 mb-2 uppercase tracking-wider">Age (Years)</label>
+                                                <input
+                                                    type="number"
+                                                    required
+                                                    placeholder="e.g. 25"
+                                                    value={tempVisitor.age}
+                                                    onChange={(e) => setTempVisitor({ ...tempVisitor, age: e.target.value })}
+                                                    className="w-full border-2 border-gray-100 focus:border-sky-blue rounded-2xl px-5 py-4 text-gray-700 font-medium outline-none transition-all text-lg"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col items-center">
+                                            <label className="block text-sm font-bold text-gray-600 mb-4 uppercase tracking-wider self-start">Face Capture</label>
+                                            <FaceCapture
+                                                capturedImage={tempVisitor.photo}
+                                                onCapture={(img) => setTempVisitor(prev => ({ ...prev, photo: img }))}
+                                                onCaptureLandmarks={(lm) => setTempVisitor(prev => ({ ...prev, faceLandmarks: lm }))}
+                                                onClear={() => setTempVisitor(prev => ({ ...prev, photo: null, faceLandmarks: null }))}
+                                            />
+                                            {!tempVisitor.photo && (
+                                                <p className="text-amber-500 text-xs mt-4 font-bold animate-pulse">📸 Look at the camera to capture</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col sm:flex-row gap-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setStep("selection")}
+                                            className="flex-1 border-2 border-gray-200 hover:border-gray-300 text-gray-500 py-4 rounded-2xl font-bold transition-all"
+                                        >
+                                            ← Back to Quantities
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={!tempVisitor.name || !tempVisitor.photo || submitting}
+                                            className="flex-[2] bg-fresh-green hover:bg-green-500 disabled:opacity-40 text-white py-4 rounded-2xl font-bold text-xl transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-3"
+                                        >
+                                            {submitting ? (
+                                                <>⏳ Processing...</>
+                                            ) : (
+                                                <>
+                                                    {currentVisitorIdx === totalVisitors - 1 ? "Complete Booking 🎟️" : "Next Visitor →"}
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    {bookError && (
+                                        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-medium mt-6">
+                                            ⚠️ {bookError}
+                                        </div>
+                                    )}
                                 </div>
                             </motion.form>
                         )}

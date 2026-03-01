@@ -123,8 +123,8 @@ export default function Complaints() {
                                                         type="button"
                                                         onClick={() => setComplaintForm((f) => ({ ...f, category: c }))}
                                                         className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition-all ${complaintForm.category === c
-                                                                ? "bg-coral-orange text-white border-coral-orange"
-                                                                : "border-gray-200 text-gray-600 hover:border-coral-orange hover:text-coral-orange"
+                                                            ? "bg-coral-orange text-white border-coral-orange"
+                                                            : "border-gray-200 text-gray-600 hover:border-coral-orange hover:text-coral-orange"
                                                             }`}
                                                     >
                                                         {c}

@@ -88,29 +88,23 @@ export async function apiGetMe() {
 // ── Bookings ──────────────────────────────────────────────────────────────────
 
 export async function apiCreateBooking(bookingData) {
+    const { visitDate, totalPrice, visitors } = bookingData;
+
+    // Ensure each visitor with face landmarks has a flattened landmarkVector
+    const processedVisitors = visitors.map(v => {
+        const visitor = { ...v };
+        if (v.faceLandmarks && Array.isArray(v.faceLandmarks)) {
+            visitor.landmarkVector = v.faceLandmarks.flatMap(p => [p.x, p.y, p.z]);
+            delete visitor.faceLandmarks; // Don't send the bloated object array
+        }
+        return visitor;
+    });
+
     const payload = {
-        visitDate: bookingData.visit_date,
-        totalPrice: bookingData.total_amount,
-        visitors: []
+        visitDate,
+        totalPrice,
+        visitors: processedVisitors
     };
-
-    // Build primary visitor object with photo + biometric landmark vector
-    const primaryVisitor = {
-        name: JSON.parse(localStorage.getItem("sp_user") || "{}").name || "Primary Visitor",
-    };
-    if (bookingData.profileImage) {
-        primaryVisitor.photo = bookingData.profileImage;
-    }
-    if (bookingData.faceLandmarks && Array.isArray(bookingData.faceLandmarks)) {
-        // Flatten {x, y, z} landmark objects to a single numeric array for storage
-        primaryVisitor.landmarkVector = bookingData.faceLandmarks.flatMap(p => [p.x, p.y, p.z]);
-    }
-    payload.visitors.push(primaryVisitor);
-
-    const extraCount = (bookingData.adult_count || 0) + (bookingData.child_count || 0) + (bookingData.senior_count || 0) - 1;
-    for (let i = 0; i < Math.max(0, extraCount); i++) {
-        payload.visitors.push({ name: `Visitor ${i + 2}` });
-    }
 
     return request("/tickets/book", {
         method: "POST",

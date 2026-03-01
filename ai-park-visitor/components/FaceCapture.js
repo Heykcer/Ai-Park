@@ -11,6 +11,7 @@ export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptu
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
     const fileInputRef = useRef(null);
+    const intervalRef = useRef(null);
 
     const [cameraActive, setCameraActive] = useState(false);
     const [permissionDenied, setPermissionDenied] = useState(false);
@@ -172,17 +173,21 @@ export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptu
     }, []);
 
     useEffect(() => {
-        return () => stopCamera();
+        return () => {
+            stopCamera();
+            if (intervalRef.current) clearInterval(intervalRef.current);
+        };
     }, [stopCamera]);
 
     const handleCapture = () => {
         if (countdown !== null) return;
         let count = 3;
         setCountdown(count);
-        const interval = setInterval(() => {
+        intervalRef.current = setInterval(() => {
             count -= 1;
             if (count === 0) {
-                clearInterval(interval);
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
                 setCountdown(null);
                 takePhoto();
             } else {
@@ -252,7 +257,7 @@ export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptu
                         <p className="text-sky-600 font-bold flex items-center gap-2 mt-2">
                             <CheckCircle size={20} /> Ready to go!
                         </p>
-                        <button onClick={() => { onClear(); startCamera(); }} className="mt-2 flex items-center gap-2 text-gray-500 text-sm font-semibold border-b border-dashed border-gray-300">
+                        <button type="button" onClick={() => { onClear(); startCamera(); }} className="mt-2 flex items-center gap-2 text-gray-500 text-sm font-semibold border-b border-dashed border-gray-300">
                             <RefreshCw size={14} /> Retake Photo
                         </button>
                     </div>
@@ -266,10 +271,10 @@ export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptu
                                     <AlertCircle size={48} />
                                     <p className="font-bold">{error || "Camera Permission Denied"}</p>
                                 </div>
-                                <button onClick={() => fileInputRef.current?.click()} className="w-full bg-white text-gray-900 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
+                                <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full bg-white text-gray-900 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
                                     <Upload size={18} /> Upload Manually
                                 </button>
-                                <button onClick={startCamera} className="text-sky-400 text-sm font-semibold hover:underline">
+                                <button type="button" onClick={startCamera} className="text-sky-400 text-sm font-semibold hover:underline">
                                     Try Camera Again
                                 </button>
                             </div>
@@ -279,10 +284,10 @@ export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptu
                                     <Camera size={40} className="text-white/20" />
                                 </div>
                                 <div className="flex flex-col gap-3">
-                                    <button onClick={startCamera} className="bg-sky-500 hover:bg-sky-400 text-white py-4 px-8 rounded-2xl font-bold shadow-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2">
+                                    <button type="button" onClick={startCamera} className="bg-sky-500 hover:bg-sky-400 text-white py-4 px-8 rounded-2xl font-bold shadow-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2">
                                         <Camera size={22} /> Open Real-time Camera
                                     </button>
-                                    <button onClick={() => fileInputRef.current?.click()} className="text-white/60 hover:text-white text-sm font-medium flex items-center justify-center gap-2">
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="text-white/60 hover:text-white text-sm font-medium flex items-center justify-center gap-2">
                                         <Upload size={16} /> or upload from gallery
                                     </button>
                                 </div>
@@ -317,10 +322,10 @@ export default function FaceCapture({ onCapture, onClear, capturedImage, onCaptu
 
                         {/* Controls */}
                         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 px-6 z-10">
-                            <button onClick={handleCapture} disabled={countdown !== null} className="flex-1 bg-coral-orange hover:bg-orange-500 disabled:bg-gray-600 text-white h-16 rounded-2xl font-black text-lg uppercase tracking-widest shadow-2xl transition-all border border-orange-400">
+                            <button type="button" onClick={handleCapture} disabled={countdown !== null} className="flex-1 bg-coral-orange hover:bg-orange-500 disabled:bg-gray-600 text-white h-16 rounded-2xl font-black text-lg uppercase tracking-widest shadow-2xl transition-all border border-orange-400">
                                 {countdown ? "HOLD STEADY..." : "CAPTURE NOW"}
                             </button>
-                            <button onClick={stopCamera} className="w-16 h-16 bg-white border border-white/20 hover:bg-gray-200 text-gray-900 rounded-2xl flex items-center justify-center shadow-lg transition-all">
+                            <button type="button" onClick={stopCamera} className="w-16 h-16 bg-white border border-white/20 hover:bg-gray-200 text-gray-900 rounded-2xl flex items-center justify-center shadow-lg transition-all">
                                 <X size={24} strokeWidth={3} />
                             </button>
                         </div>

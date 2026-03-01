@@ -16,11 +16,11 @@
   .soft-shadow {
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
   }
-  
+
   .card-rounded {
     border-radius: 1.5rem;
   }
-  
+
   .water-splash {
     border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
   }
@@ -32,7 +32,7 @@
   .animate-float {
     animation: float 6s ease-in-out infinite;
   }
-  
+
   .animate-bounce-slow {
     animation: bounce 3s infinite;
   }
@@ -68,9 +68,17 @@
 }
 
 @keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-20px); }
-  100% { transform: translateY(0px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-20px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
 }
 
 body {
@@ -80,7 +88,12 @@ body {
   overflow-x: hidden;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-poppins);
 }
 
